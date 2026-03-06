@@ -1,0 +1,69 @@
+name: CI - Scan with Bandit
+
+on: [push]
+
+jobs:
+
+  sast-scan-with-bandit:
+    name: Run Bandit Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Run Bandit Scan
+        run: bandit --exit-zero --severity-level=medium --confidence-level=medium --format=json --output=bandit-report.json --recursive .
+
+      - name: Upload Scan Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-findings
+          path: bandit-report.json
+
+
+  docker-build-and-image-scan:
+    name: Build Image and Run Image Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Docker Setup
+        uses: docker/login-action@v3.7.0
+        with:
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Docker version
+        run: docker version
+
+      - name: Build Image
+        run: docker build -t local/pygoat:latest -f Dockerfile .
+
+      - name: Scout Image Scan
+        uses: docker/scout-action@v1.18.2
+        with:
+          exit-code: "true"
+          command: quickview,cves
+          dockerhub-user: ${{ secrets.REGISTRY_USERNAME }}
+          dockerhub-password: ${{ secrets.REGISTRY_PASSWORD }}
+          only-severities: critical,high
+          sarif-file: docker-scout-report.sarif
+
+      - name: Upload Scout Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-scout-findings
+          path: docker-scout-report.sarif
